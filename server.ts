@@ -1,12 +1,15 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import { fileURLToPath } from "url";
 import Database from "better-sqlite3";
 import cookieParser from "cookie-parser";
 import { GoogleGenAI, Type } from "@google/genai";
 
 const app = express();
 const PORT = 3000;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const db = new Database("top5.db");
 
 // Database Initialization
