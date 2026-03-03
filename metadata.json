@@ -1,0 +1,5 @@
+{
+  "name": "Top5",
+  "description": "A social music app to share your Top 5 songs, get AI-powered vibe summaries, and discover music with friends.",
+  "requestFramePermissions": []
+}
