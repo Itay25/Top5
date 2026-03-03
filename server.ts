@@ -4,7 +4,6 @@ import path from "path";
 import { fileURLToPath } from "url";
 import Database from "better-sqlite3";
 import cookieParser from "cookie-parser";
-import { GoogleGenAI, Type } from "@google/genai";
 
 const app = express();
 const PORT = 3000;
@@ -535,10 +534,7 @@ app.post("/api/spotify/sync", async (req, res) => {
     });
     transaction();
 
-    // 3. AI Analysis
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const model = "gemini-3-flash-preview";
-
+    // 3. AI Analysis - Handled on frontend
     res.json({
       weekly_top5: weeklySongs,
       monthly_top5: monthlySongs,
