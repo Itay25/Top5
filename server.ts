@@ -15,7 +15,7 @@ const db = new Database("top5.db");
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
-    email TEXT UNIQUE,
+    email TEXT,
     display_name TEXT,
     spotify_id TEXT,
     access_token TEXT,
@@ -53,6 +53,54 @@ try {
 try {
   db.exec("ALTER TABLE users ADD COLUMN spotify_image_url TEXT;");
 } catch (e) {}
+
+// Migration: Remove UNIQUE constraint from email (SQLite requires table recreation)
+try {
+  const tableInfo = db.prepare("PRAGMA table_info(users)").all();
+  const hasEmail = tableInfo.some((col: any) => col.name === 'email');
+  
+  if (hasEmail) {
+    const indexInfo = db.prepare("PRAGMA index_list(users)").all();
+    const hasUniqueEmail = indexInfo.some((idx: any) => idx.unique === 1 && idx.origin === 'u'); // 'u' means unique constraint
+    
+    // Check if email index is unique by checking index_info
+    let isEmailUnique = false;
+    for (const idx of indexInfo) {
+      if (idx.unique === 1) {
+        const cols = db.prepare(`PRAGMA index_info('${idx.name}')`).all();
+        if (cols.length === 1 && cols[0].name === 'email') {
+          isEmailUnique = true;
+          break;
+        }
+      }
+    }
+
+    if (isEmailUnique) {
+      console.log("Migrating users table to remove UNIQUE constraint on email...");
+      db.transaction(() => {
+        db.exec(`
+          CREATE TABLE users_new (
+            id TEXT PRIMARY KEY,
+            email TEXT,
+            display_name TEXT,
+            spotify_id TEXT,
+            access_token TEXT,
+            refresh_token TEXT,
+            image_url TEXT,
+            spotify_image_url TEXT
+          );
+          INSERT INTO users_new (id, email, display_name, spotify_id, access_token, refresh_token, image_url, spotify_image_url)
+          SELECT id, email, display_name, spotify_id, access_token, refresh_token, image_url, spotify_image_url FROM users;
+          DROP TABLE users;
+          ALTER TABLE users_new RENAME TO users;
+        `);
+      })();
+      console.log("Migration complete.");
+    }
+  }
+} catch (e) {
+  console.error("Migration failed:", e);
+}
 
 // Migration: Add spotify_url and preview_url to top_songs if they don't exist
 try {
@@ -107,23 +155,29 @@ app.get("/api/auth/spotify/url", (req, res) => {
   if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
     return res.status(500).json({ error: "Spotify Client ID or Secret is missing in environment variables." });
   }
-  if (!process.env.APP_URL) {
-    return res.status(500).json({ error: "APP_URL is missing in environment variables. This is required for the redirect URI." });
+  
+  const origin = req.query.origin as string || process.env.APP_URL;
+  if (!origin) {
+    return res.status(500).json({ error: "Origin/APP_URL is missing. This is required for the redirect URI." });
   }
 
+  const redirectUri = `${origin}/auth/spotify/callback`;
   const scope = "user-top-read user-read-email user-read-private";
   const params = new URLSearchParams({
     client_id: SPOTIFY_CLIENT_ID,
     response_type: "code",
-    redirect_uri: REDIRECT_URI,
+    redirect_uri: redirectUri,
     scope: scope,
     show_dialog: "true",
+    state: origin, // Pass origin back in state
   });
   res.json({ url: `https://accounts.spotify.com/authorize?${params.toString()}` });
 });
 
 app.get("/auth/spotify/callback", async (req, res) => {
-  const { code, error } = req.query;
+  const { code, error, state } = req.query;
+  const origin = (state as string) || process.env.APP_URL;
+  const redirectUri = `${origin}/auth/spotify/callback`;
   
   if (error) {
     console.error("Spotify Auth Callback Error:", error);
@@ -155,9 +209,14 @@ app.get("/auth/spotify/callback", async (req, res) => {
       body: new URLSearchParams({
         grant_type: "authorization_code",
         code: code as string,
-        redirect_uri: REDIRECT_URI,
+        redirect_uri: redirectUri,
       }),
     });
+
+    if (!tokenResponse.ok) {
+      const errorData = await tokenResponse.text();
+      throw new Error(`Spotify Token Error: ${tokenResponse.status} ${errorData}`);
+    }
 
     const tokens = await tokenResponse.json();
     
@@ -165,6 +224,15 @@ app.get("/auth/spotify/callback", async (req, res) => {
     const userResponse = await fetch("https://api.spotify.com/v1/me", {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     });
+
+    if (!userResponse.ok) {
+      const errorData = await userResponse.text();
+      if (userResponse.status === 403) {
+        throw new Error("Your Spotify account is not authorized for this app yet. In Development Mode, you must manually add user emails in the Spotify Developer Dashboard under 'User Management'.");
+      }
+      throw new Error(`Spotify User Error: ${userResponse.status} ${errorData}`);
+    }
+
     const spotifyUser = await userResponse.json();
 
     // Save or update user
@@ -213,9 +281,9 @@ app.get("/auth/spotify/callback", async (req, res) => {
         </body>
       </html>
     `);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Spotify Auth Error:", error);
-    res.status(500).send("Authentication failed");
+    res.status(500).send(`Authentication failed: ${error.message || "Unknown error"}`);
   }
 });
 
