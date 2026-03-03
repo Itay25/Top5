@@ -188,8 +188,6 @@ app.get("/auth/spotify/callback", async (req, res) => {
       secure: true,
       sameSite: "none",
       path: "/",
-      // @ts-ignore
-      partitioned: true,
     });
 
     res.cookie("userId", userId, {
@@ -198,8 +196,6 @@ app.get("/auth/spotify/callback", async (req, res) => {
       sameSite: "none",
       maxAge: 30 * 24 * 60 * 60 * 1000,
       path: "/",
-      // @ts-ignore
-      partitioned: true,
     });
 
     res.send(`
@@ -229,10 +225,7 @@ app.post("/api/auth/logout", (req, res) => {
     secure: true,
     sameSite: "none",
     path: "/",
-    // @ts-ignore
-    partitioned: true,
   });
-  res.clearCookie("userId", { path: "/" });
   res.json({ success: true });
 });
 
