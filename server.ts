@@ -182,11 +182,22 @@ app.get("/auth/spotify/callback", async (req, res) => {
         spotify_image_url = excluded.spotify_image_url
     `).run(userId, spotifyUser.email, spotifyUser.display_name, spotifyUser.id, tokens.access_token, tokens.refresh_token, imageUrl, imageUrl);
 
+    // Clear old cookie before setting new one to prevent auth issues when switching accounts
+    res.clearCookie("userId", {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+      path: "/",
+      // @ts-ignore
+      partitioned: true,
+    });
+
     res.cookie("userId", userId, {
       httpOnly: true,
       secure: true,
       sameSite: "none",
       maxAge: 30 * 24 * 60 * 60 * 1000,
+      path: "/",
       // @ts-ignore
       partitioned: true,
     });
