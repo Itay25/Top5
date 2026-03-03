@@ -300,28 +300,55 @@ export default function App() {
   }, []);
 
   const handleSpotifyConnect = async () => {
-    try {
-      const res = await fetch("/api/auth/spotify/url");
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || "Failed to get auth URL");
-      }
-      const { url } = await res.json();
-      
-      // Use window.open for a popup to avoid iframe security blocks from Spotify
+    const isIframe = window.self !== window.top;
+    const origin = window.location.origin;
+
+    if (isIframe) {
+      // In Editor/Iframe: MUST use popup to avoid breaking the editor
       const width = 600;
       const height = 700;
       const left = window.screenX + (window.outerWidth - width) / 2;
       const top = window.screenY + (window.outerHeight - height) / 2;
       
-      window.open(
-        url,
+      const authWindow = window.open(
+        "about:blank",
         "spotify_auth",
         `width=${width},height=${height},left=${left},top=${top}`
       );
-    } catch (e: any) {
-      console.error("Spotify connect error", e);
-      alert(`Connection error: ${e.message || "Please check your Spotify Client ID and Secret."}`);
+
+      if (!authWindow) {
+        alert("Popup blocked! Please allow popups for this site to connect with Spotify.");
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/auth/spotify/url?origin=${encodeURIComponent(origin)}`);
+        if (!res.ok) {
+          const error = await res.json();
+          authWindow.close();
+          throw new Error(error.message || "Failed to get auth URL");
+        }
+        const { url } = await res.json();
+        authWindow.location.href = url;
+      } catch (e: any) {
+        console.error("Spotify connect error", e);
+        authWindow.close();
+        alert(`Connection error: ${e.message || "Please check your Spotify Client ID and Secret."}`);
+      }
+    } else {
+      // Standalone/Mobile: Use direct redirect for maximum reliability
+      try {
+        const res = await fetch(`/api/auth/spotify/url?origin=${encodeURIComponent(origin)}`);
+        if (!res.ok) {
+          const error = await res.json();
+          throw new Error(error.message || "Failed to get auth URL");
+        }
+        const { url } = await res.json();
+        window.location.href = url;
+      } catch (e: any) {
+        console.error("Spotify connect error", e);
+        alert(`Connection error: ${e.message || "Please check your Spotify Client ID and Secret."}`);
+      }
     }
   };
 
